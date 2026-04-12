@@ -30,6 +30,16 @@ async function fetchVideo() {
   if (!rawUrl) { shakeInput(); return; }
   if (!isValidUrl(rawUrl)) { showError('Please enter a valid URL (https://…)'); return; }
 
+  // Check Cloudflare Turnstile token
+  let cfToken = '';
+  if (typeof turnstile !== 'undefined') {
+    cfToken = turnstile.getResponse();
+    if (!cfToken) {
+      showError('Please complete the Cloudflare security challenge (Captcha).');
+      return;
+    }
+  }
+
   const methodSelect = document.getElementById('apiMethod');
   const method = methodSelect ? methodSelect.value : 'fast';
 
@@ -38,7 +48,7 @@ async function fetchVideo() {
 
   try {
     // Calling the Vercel backend Serverless function to completely hide the API logic
-    const res = await fetch(`/api/getVideo?url=${encodeURIComponent(rawUrl)}&method=${method}`);
+    const res = await fetch(`/api/getVideo?url=${encodeURIComponent(rawUrl)}&method=${method}&cf_token=${encodeURIComponent(cfToken)}`);
     const data = await res.json();
 
     if (!res.ok || data.status !== 'success') {
@@ -55,6 +65,9 @@ async function fetchVideo() {
     showError(msg);
   } finally {
     setLoading(false);
+    if (typeof turnstile !== 'undefined') {
+      turnstile.reset();
+    }
   }
 }
 

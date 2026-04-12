@@ -9,6 +9,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
+  <!-- Cloudflare Turnstile -->
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 </head>
 <body>
 
@@ -91,6 +93,11 @@
               <span class="spinner"></span> Fetching…
             </span>
           </button>
+        </div>
+
+        <!-- Cloudflare Turnstile Widget -->
+        <div id="cf-turnstile-container" style="margin-top: 1rem; display: flex; justify-content: center;">
+          <div class="cf-turnstile" data-sitekey="0x4AAAAAAC8lKEcI7lCXHLHP" data-theme="dark"></div>
         </div>
 
         <!-- Supported platforms chips -->
