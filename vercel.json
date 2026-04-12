@@ -1,3 +1,9 @@
 {
-  "version": 2
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/_hf_api/(.*)",
+      "destination": "https://tools131313-video-api-fast.hf.space/$1"
+    }
+  ]
 }

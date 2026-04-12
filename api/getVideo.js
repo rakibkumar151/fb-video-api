@@ -47,7 +47,22 @@ export default async function handler(req, res) {
 
   try {
     const fetchRes = await fetch(apiUrl);
-    const data = await fetchRes.json();
+    let data = await fetchRes.json();
+    
+    // Completely hide Hugging Face domain from frontend
+    if (data.formats_list && Array.isArray(data.formats_list)) {
+        data.formats_list = data.formats_list.map(format => {
+            if (format.merge_url) {
+                // Replace the huggingface space URL with our Vercel rewrite
+                format.merge_url = format.merge_url.replace(
+                    "https://tools131313-video-api-fast.hf.space",
+                    "/_hf_api"
+                );
+            }
+            return format;
+        });
+    }
+
     return res.status(200).json(data);
   } catch (error) {
     return res.status(500).json({ status: "error", error: error.message });
