@@ -1,9 +1,7 @@
 /* ================================================================
-   VidSnap – App Logic  |  API: videoapi-c4eq.onrender.com
+   VidSnap – App Logic
    Handles real API response format with formats_list array
    ================================================================ */
-
-const API_BASE = 'https://videoapi-c4eq.onrender.com/get_video?url=';
 
 // ── DOM refs ──────────────────────────────────────────────────────
 const urlInput    = document.getElementById('videoUrl');
