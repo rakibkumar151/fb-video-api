@@ -1,23 +1,19 @@
 /* ================================================================
-   VidSnap – Application Logic
-   API base: https://videoapi-c4eq.onrender.com/get_video?url=
+   VidSnap – App Logic  |  API: videoapi-c4eq.onrender.com
+   Handles real API response format with formats_list array
    ================================================================ */
 
 const API_BASE = 'https://videoapi-c4eq.onrender.com/get_video?url=';
 
 // ── DOM refs ──────────────────────────────────────────────────────
-const urlInput      = document.getElementById('videoUrl');
-const downloadBtn   = document.getElementById('downloadBtn');
-const clearBtn      = document.getElementById('clearBtn');
-const resultArea    = document.getElementById('resultArea');
-const errorArea     = document.getElementById('errorArea');
-const errorMsg      = document.getElementById('errorMsg');
-const videoSource   = document.getElementById('videoSource');
-const videoPreview  = document.getElementById('videoPreview');
-const directDl      = document.getElementById('directDownload');
-const copyBtnText   = document.getElementById('copyBtnText');
+const urlInput    = document.getElementById('videoUrl');
+const downloadBtn = document.getElementById('downloadBtn');
+const clearBtn    = document.getElementById('clearBtn');
+const resultArea  = document.getElementById('resultArea');
+const errorArea   = document.getElementById('errorArea');
+const errorMsg    = document.getElementById('errorMsg');
 
-// ── Show/hide clear button ─────────────────────────────────────────
+// ── Clear btn toggle ───────────────────────────────────────────────
 urlInput.addEventListener('input', () => {
   clearBtn.style.display = urlInput.value ? 'flex' : 'none';
 });
@@ -26,202 +22,241 @@ clearBtn.addEventListener('click', () => {
   clearBtn.style.display = 'none';
   urlInput.focus();
 });
+urlInput.addEventListener('keydown', e => { if (e.key === 'Enter') fetchVideo(); });
 
-// Allow pressing Enter to trigger download
-urlInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') fetchVideo();
-});
-
-// ── Main fetch logic ───────────────────────────────────────────────
+// ── Main fetch ─────────────────────────────────────────────────────
 async function fetchVideo() {
   const rawUrl = urlInput.value.trim();
-
-  if (!rawUrl) {
-    shakeInput();
-    return;
-  }
-
-  if (!isValidUrl(rawUrl)) {
-    showError('Please enter a valid URL (must start with https://).');
-    return;
-  }
+  if (!rawUrl) { shakeInput(); return; }
+  if (!isValidUrl(rawUrl)) { showError('Please enter a valid URL (https://…)'); return; }
 
   setLoading(true);
   hideAll();
 
-  const apiUrl = API_BASE + encodeURIComponent(rawUrl);
-
   try {
-    const res = await fetch(apiUrl);
+    const res = await fetch(API_BASE + encodeURIComponent(rawUrl));
+    const data = await res.json();
 
-    if (!res.ok) {
-      let detail = '';
-      try {
-        const json = await res.json();
-        detail = json.error || json.detail || JSON.stringify(json);
-      } catch (_) {
-        detail = `Server returned status ${res.status}.`;
-      }
-      throw new Error(detail || `Request failed (${res.status}).`);
+    if (!res.ok || data.status !== 'success') {
+      throw new Error(data.error || data.detail || `Server error (${res.status})`);
     }
 
-    const contentType = res.headers.get('content-type') || '';
-
-    // ── Case 1: API returns a JSON object with a video URL field ──
-    if (contentType.includes('application/json')) {
-      const data = await res.json();
-
-      // Try common fields: url, video_url, download_url, link
-      const videoUrl = data.url || data.video_url || data.download_url
-                    || data.link || data.direct_url || data.hdurl || data.sdurl;
-
-      if (videoUrl) {
-        showResult(videoUrl);
-      } else {
-        throw new Error('The API responded with JSON but no video URL was found.');
-      }
-
-    // ── Case 2: API streams the video directly ────────────────────
-    } else if (contentType.includes('video/') || contentType.includes('application/octet-stream')) {
-      // Stream → Blob → Object URL
-      const blob = await res.blob();
-      const objUrl = URL.createObjectURL(blob);
-      showResult(objUrl, true /* isBlob */);
-
-    // ── Case 3: Redirect or other – use raw API URL as src ────────
-    } else {
-      // Fallback: just point video tag at the API URL directly
-      showResult(apiUrl);
-    }
+    renderResult(data);
 
   } catch (err) {
-    console.error('[VidSnap] fetchVideo error:', err);
-    showError(err.message || 'An unexpected error occurred. Please try again.');
+    console.error('[VidSnap]', err);
+    const msg = err.message.includes('Failed to fetch')
+      ? 'Network error — the API may be sleeping (free tier). Wait 30s and try again.'
+      : err.message;
+    showError(msg);
   } finally {
     setLoading(false);
   }
 }
 
-// ── Show result ────────────────────────────────────────────────────
-function showResult(videoUrl, isBlob = false) {
-  videoSource.src  = videoUrl;
-  directDl.href    = videoUrl;
-  directDl.setAttribute('download', isBlob ? 'vidsnap_video.mp4' : getFilename(videoUrl));
+// ── Render result from formats_list ───────────────────────────────
+function renderResult(data) {
+  const formats = data.formats_list || [];
+  if (!formats.length) { showError('No downloadable formats found for this URL.'); return; }
 
-  videoPreview.load();
+  const title    = data.title    || 'Untitled Video';
+  const platform = data.platform || 'Unknown';
+
+  // Separate video (with merge_url) vs audio-only
+  const videoFormats = formats.filter(f =>
+    f.format_type && !f.format_type.toLowerCase().includes('audio only') && f.merge_url
+  );
+  const audioFormats = formats.filter(f =>
+    f.format_type && f.format_type.toLowerCase().includes('audio only') && f.direct_url
+  );
+
+  // De-duplicate by resolution — keep highest sl per resolution
+  const seen = new Map();
+  videoFormats.forEach(f => {
+    const key = f.resolution;
+    if (!seen.has(key)) seen.set(key, f);
+  });
+  const uniqueVideo = Array.from(seen.values()).slice(0, 5); // max 5 quality options
+
+  // Build quality cards HTML
+  const qualityCards = uniqueVideo.map((f, i) => `
+    <div class="quality-card ${i === 0 ? 'quality-best' : ''}">
+      <div class="qc-left">
+        ${i === 0 ? '<span class="qc-badge">⭐ Best</span>' : ''}
+        <div class="qc-res">${f.resolution}</div>
+        <div class="qc-meta">
+          <span class="qc-ext">${(f.extension || 'mp4').toUpperCase()}</span>
+          <span class="qc-size">📦 ${f.size || 'N/A'}</span>
+          <span class="qc-type">🎬 With Audio</span>
+        </div>
+      </div>
+      <a class="btn-action btn-primary qc-dl"
+         href="${f.merge_url}"
+         target="_blank"
+         rel="noopener"
+         onclick="trackDownload('${f.resolution}')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Download
+      </a>
+    </div>
+  `).join('');
+
+  const audioCard = audioFormats.length ? `
+    <div class="quality-card quality-audio">
+      <div class="qc-left">
+        <div class="qc-res">🎵 Audio Only</div>
+        <div class="qc-meta">
+          <span class="qc-ext">${(audioFormats[0].extension || 'm4a').toUpperCase()}</span>
+          <span class="qc-size">📦 ${audioFormats[0].size || 'N/A'}</span>
+        </div>
+      </div>
+      <a class="btn-action btn-ghost qc-dl"
+         href="${audioFormats[0].direct_url}"
+         target="_blank"
+         rel="noopener">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Download
+      </a>
+    </div>
+  ` : '';
+
+  // Build platform pill
+  const platformColors = {
+    instagram: 'chip-ig', youtube: 'chip-yt', tiktok: 'chip-tt',
+    facebook: 'chip-fb', twitter: 'chip-tw', x: 'chip-tw'
+  };
+  const pKey  = platform.toLowerCase();
+  const pClass = platformColors[pKey] || 'chip-ig';
+
+  document.getElementById('resultArea').innerHTML = `
+    <div class="card result-card">
+      <div class="result-header">
+        <div class="result-icon">✅</div>
+        <div class="result-info">
+          <div class="result-title">${escHtml(title)}</div>
+          <div class="result-meta">
+            <span class="chip ${pClass}">${escHtml(platform)}</span>
+            <span class="qc-size">${data.total_formats || formats.length} formats found</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="quality-label">Choose Quality</div>
+      <div class="quality-list">
+        ${qualityCards}
+        ${audioCard}
+      </div>
+
+      <div class="result-actions" style="margin-top:1.25rem;">
+        <button class="btn-action btn-ghost" onclick="resetDownloader()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="1 4 1 10 7 10"/>
+            <path d="M3.51 15a9 9 0 102.13-9.36L1 10"/>
+          </svg>
+          New Download
+        </button>
+        <button class="btn-action btn-ghost" onclick="copyPageLink()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2"/>
+            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+          </svg>
+          <span id="copyBtnText">Copy Link</span>
+        </button>
+      </div>
+    </div>
+  `;
+
   resultArea.style.display = 'block';
 }
 
-// ── Show error ─────────────────────────────────────────────────────
-function showError(msg) {
-  errorMsg.textContent = msg;
-  errorArea.style.display = 'block';
-}
-
+// ── Helpers ────────────────────────────────────────────────────────
 function hideAll() {
   resultArea.style.display = 'none';
   errorArea.style.display  = 'none';
 }
 
-// ── Toggle loading state ───────────────────────────────────────────
-function setLoading(loading) {
-  const textEl    = downloadBtn.querySelector('.btn-text');
-  const loadingEl = downloadBtn.querySelector('.btn-loading');
-  downloadBtn.disabled = loading;
-
-  if (loading) {
-    textEl.style.display    = 'none';
-    loadingEl.style.display = 'flex';
-  } else {
-    textEl.style.display    = 'flex';
-    loadingEl.style.display = 'none';
-  }
+function showError(msg) {
+  errorMsg.textContent        = msg;
+  errorArea.style.display     = 'block';
 }
 
-// ── Reset ──────────────────────────────────────────────────────────
+function setLoading(on) {
+  const txt = downloadBtn.querySelector('.btn-text');
+  const ld  = downloadBtn.querySelector('.btn-loading');
+  downloadBtn.disabled = on;
+  txt.style.display = on ? 'none' : 'flex';
+  ld.style.display  = on ? 'flex' : 'none';
+}
+
 function resetDownloader() {
   hideAll();
   urlInput.value = '';
   clearBtn.style.display = 'none';
-  videoSource.src = '';
-  videoPreview.load();
-  copyBtnText.textContent = 'Copy Link';
-  urlInput.focus();
+  resultArea.innerHTML = '';
   window.scrollTo({ top: 0, behavior: 'smooth' });
+  urlInput.focus();
 }
 
-// ── Copy link ──────────────────────────────────────────────────────
-async function copyLink() {
-  const url = videoSource.src;
-  if (!url) return;
+async function copyPageLink() {
+  const src = urlInput.value || location.href;
   try {
-    await navigator.clipboard.writeText(url);
-    copyBtnText.textContent = '✓ Copied!';
-    setTimeout(() => { copyBtnText.textContent = 'Copy Link'; }, 3000);
+    await navigator.clipboard.writeText(src);
   } catch (_) {
-    // fallback
     const ta = document.createElement('textarea');
-    ta.value = url;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    ta.remove();
-    copyBtnText.textContent = '✓ Copied!';
-    setTimeout(() => { copyBtnText.textContent = 'Copy Link'; }, 3000);
+    ta.value = src; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy'); ta.remove();
   }
+  const el = document.getElementById('copyBtnText');
+  if (el) { el.textContent = '✓ Copied!'; setTimeout(() => { el.textContent = 'Copy Link'; }, 2500); }
 }
 
-// ── Helpers ────────────────────────────────────────────────────────
-function isValidUrl(str) {
-  try {
-    const u = new URL(str);
-    return u.protocol === 'http:' || u.protocol === 'https:';
-  } catch (_) {
-    return false;
-  }
+function trackDownload(res) {
+  console.log('[VidSnap] Download started:', res);
 }
 
-function getFilename(url) {
-  try {
-    const path = new URL(url).pathname;
-    const name = path.split('/').pop();
-    return name && name.includes('.') ? name : 'vidsnap_video.mp4';
-  } catch (_) {
-    return 'vidsnap_video.mp4';
-  }
+function isValidUrl(s) {
+  try { const u = new URL(s); return u.protocol === 'http:' || u.protocol === 'https:'; }
+  catch (_) { return false; }
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function shakeInput() {
-  const wrap = document.querySelector('.input-wrap');
-  wrap.classList.add('shake');
-  setTimeout(() => wrap.classList.remove('shake'), 600);
+  const w = document.querySelector('.input-wrap');
+  w.classList.add('shake');
+  setTimeout(() => w.classList.remove('shake'), 600);
 }
 
-// ── Shake animation (injected CSS) ────────────────────────────────
+// ── Shake CSS injected ─────────────────────────────────────────────
 const shakeStyle = document.createElement('style');
 shakeStyle.textContent = `
   @keyframes shake {
-    0%,100% { transform: translateX(0); }
-    20%     { transform: translateX(-8px); }
-    40%     { transform: translateX(8px); }
-    60%     { transform: translateX(-6px); }
-    80%     { transform: translateX(6px); }
+    0%,100%{transform:translateX(0)} 20%{transform:translateX(-8px)}
+    40%{transform:translateX(8px)} 60%{transform:translateX(-6px)} 80%{transform:translateX(6px)}
   }
-  .shake { animation: shake 0.5s ease; border-color: rgba(239,68,68,0.5) !important; }
+  .shake { animation:shake .5s ease; border-color:rgba(239,68,68,.5) !important; }
 `;
 document.head.appendChild(shakeStyle);
 
-// ── Intersection Observer for scroll animations ───────────────────
-const observer = new IntersectionObserver((entries) => {
-  entries.forEach(entry => {
-    if (entry.isIntersecting) {
-      entry.target.style.animation = 'fadeSlideUp 0.55s ease both';
-      observer.unobserve(entry.target);
+// ── Scroll fade-in ─────────────────────────────────────────────────
+const obs = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.style.animation = 'fadeSlideUp .55s ease both';
+      obs.unobserve(e.target);
     }
   });
 }, { threshold: 0.12 });
-
-document.querySelectorAll('.step-card, .platform-item, .faq-item').forEach(el => {
-  el.style.opacity = '0';
-  observer.observe(el);
+document.querySelectorAll('.step-card,.platform-item,.faq-item').forEach(el => {
+  el.style.opacity = '0'; obs.observe(el);
 });
