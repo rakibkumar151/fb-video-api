@@ -1,11 +1,9 @@
 /* ================================================================
    VidSnap – App Logic  |  API: videoapi-c4eq.onrender.com
+   Handles real API response format with formats_list array
    ================================================================ */
 
-const API_DIRECT = 'https://videoapi-c4eq.onrender.com/get_video?url=';
-// CORS proxy fallback — used if browser blocks the direct call
-const CORS_PROXY  = 'https://corsproxy.io/?url=';
-const API_BASE_PROXIED = CORS_PROXY + encodeURIComponent('https://videoapi-c4eq.onrender.com/get_video?url=');
+const API_BASE = 'https://videoapi-c4eq.onrender.com/get_video?url=';
 
 // ── DOM refs ──────────────────────────────────────────────────────
 const urlInput    = document.getElementById('videoUrl');
@@ -26,46 +24,35 @@ clearBtn.addEventListener('click', () => {
 });
 urlInput.addEventListener('keydown', e => { if (e.key === 'Enter') fetchVideo(); });
 
-// ── Try a fetch and return parsed JSON ─────────────────────────────
-async function tryFetch(apiUrl) {
-  const res = await fetch(apiUrl, { method: 'GET', mode: 'cors' });
-  const data = await res.json();
-  if (!res.ok || data.status !== 'success') {
-    throw new Error(data.error || data.message || `Server error ${res.status}`);
-  }
-  return data;
-}
-
-// ── Main fetch — tries direct first, then CORS proxy ──────────────
+// ── Main fetch ─────────────────────────────────────────────────────
 async function fetchVideo() {
-
   const rawUrl = urlInput.value.trim();
   if (!rawUrl) { shakeInput(); return; }
   if (!isValidUrl(rawUrl)) { showError('Please enter a valid URL (https://…)'); return; }
 
+  const methodSelect = document.getElementById('apiMethod');
+  const method = methodSelect ? methodSelect.value : 'fast';
+
   setLoading(true);
   hideAll();
 
-  const encodedUrl = encodeURIComponent(rawUrl);
-
   try {
-    let data;
+    // Calling the Vercel backend Serverless function to completely hide the API logic
+    const res = await fetch(`/api/getVideo?url=${encodeURIComponent(rawUrl)}&method=${method}`);
+    const data = await res.json();
 
-    // 1️⃣ Try direct call first (works when API has CORS headers)
-    try {
-      data = await tryFetch(API_DIRECT + encodedUrl);
-    } catch (directErr) {
-      // 2️⃣ Fallback: route through CORS proxy
-      console.warn('[VidSnap] Direct CORS blocked, using proxy…', directErr.message);
-      const proxyUrl = CORS_PROXY + encodeURIComponent(API_DIRECT + encodedUrl);
-      data = await tryFetch(proxyUrl);
+    if (!res.ok || data.status !== 'success') {
+      throw new Error(data.error || data.detail || `Server error (${res.status})`);
     }
 
     renderResult(data);
 
   } catch (err) {
     console.error('[VidSnap]', err);
-    showError('আপনার ইন্টারনেট কানেকশন চেক করুন এবং আবার চেষ্টা করুন। Error: ' + err.message);
+    const msg = err.message.includes('Failed to fetch')
+      ? 'Network error — the API may be sleeping (free tier). Wait 30s and try again.'
+      : err.message;
+    showError(msg);
   } finally {
     setLoading(false);
   }

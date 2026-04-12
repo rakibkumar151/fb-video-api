@@ -76,6 +76,12 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
+          
+          <select id="apiMethod" class="api-method-select" style="padding: 0 1rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(30, 41, 59, 0.7); color: white; font-weight: 500; outline: none; margin-right: 0.5rem; cursor: pointer;">
+            <option value="fast">⚡ Fast</option>
+            <option value="medium">🐢 Medium</option>
+          </select>
+
           <button class="btn-download-main" id="downloadBtn" onclick="fetchVideo()">
             <span class="btn-text">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
