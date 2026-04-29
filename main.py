@@ -318,7 +318,10 @@ async def get_video_info(request: Request, url: str, api_key: str = "", method: 
             "formats_list": available_formats
         }
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        import traceback
+        print(f"Error occurred: {str(e)}")
+        print(traceback.format_exc())
+        return {"status": "error", "error": str(e)}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8080)
