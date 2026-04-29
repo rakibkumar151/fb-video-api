@@ -34,28 +34,40 @@ export default async function handler(req, res) {
   }
 
   let apiUrl = "";
+  let headers = {};
   
   // Decide which backend API to call based on the frontend's choice
   if (method === "fast") {
     // Hidden Hugging Face API with the secret API Key (never exposed to browser)
     const apiKey = process.env.HD_API_KEY || "vercel_secret_key_123";
-    apiUrl = `https://tools131313-video-api-fast.hf.space/get_video?url=${encodeURIComponent(url)}&api_key=${apiKey}`;
+    apiUrl = `https://rasrdaa-video-api-fast.hf.space/get_video?url=${encodeURIComponent(url)}&api_key=${apiKey}`;
+    
+    // Add Hugging Face Authorization header for private Space
+    const hfToken = process.env.HF_TOKEN;
+    if (hfToken) {
+      headers['Authorization'] = `Bearer ${hfToken}`;
+    }
   } else {
     // Default/Medium Render API
     apiUrl = `https://videoapi-c4eq.onrender.com/get_video?url=${encodeURIComponent(url)}`;
   }
 
   try {
-    const fetchRes = await fetch(apiUrl);
+    const fetchRes = await fetch(apiUrl, { headers });
     let data = await fetchRes.json();
     
     // Completely hide Hugging Face domain from frontend
     if (data.formats_list && Array.isArray(data.formats_list)) {
         data.formats_list = data.formats_list.map(format => {
             if (format.merge_url) {
-                // Replace the huggingface space URL with our Vercel rewrite
                 format.merge_url = format.merge_url.replace(
-                    "https://tools131313-video-api-fast.hf.space",
+                    "https://rasrdaa-video-api-fast.hf.space",
+                    "/_hf_api"
+                );
+            }
+            if (format.direct_url) {
+                format.direct_url = format.direct_url.replace(
+                    "https://rasrdaa-video-api-fast.hf.space",
                     "/_hf_api"
                 );
             }
